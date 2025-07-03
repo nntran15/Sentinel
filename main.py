@@ -12,6 +12,7 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 ROIS = {
     'weapon': {'top': 1275, 'left': 2055, 'width': 245, 'height': 90},
     'legend': {'top': 1275, 'left': 115, 'width': 115, 'height': 90},
+    'gamemode': {'top': 0, 'left': 0, 'width': 300, 'height': 150},
 }
 
 # Screenshot template folders
@@ -134,6 +135,55 @@ class Sentinel:
 
 
     """""""""""""""""""""""""""""
+       GAMEMODE DETECTION LOGIC
+    """""""""""""""""""""""""""""
+    def identify_gamemode(self, screenshot):
+        '''
+        Identify the gamemode and map in the screenshot using OCR.
+        Returns a dictionary with 'gamemode' and 'map' keys if found, otherwise None.
+        '''
+        gray_screenshot = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)  # Convert to grayscale for better OCR performance
+        _, threshold = cv2.threshold(gray_screenshot, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)  # Converts to black and white for isolation of text
+                                                                                                        # cv2.threshold returns optimal threshold value aand resulting binary image
+        # OCR configuration for Tesseract
+        custom_config = r'--oem 3 --psm 6 tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '
+        allowed_gamemodes = ['DUOS', 'TRIOS', 'GUN RUN', 'RANKED']
+        allowed_maps = ['WORLD\'S EDGE', 'STORM POINT', 'OLYMPUS', 'E-DISTRICT', 'KING\'S CANYON', 'MONUMENT']
+        
+        try:
+            text = pytesseract.image_to_string(threshold, config=custom_config)
+            text = text.strip()  # Remove leading/trailing whitespace
+            
+            if not text:
+                return None
+            
+            # Initialize result dictionary
+            result = {'gamemode': None, 'map': None}
+            
+            # Extract gamemode
+            for gamemode in allowed_gamemodes:
+                if gamemode in text:
+                    result['gamemode'] = gamemode
+                    break
+            
+            # Extract map
+            for map_name in allowed_maps:
+                if map_name in text:
+                    result['map'] = map_name
+                    break
+            
+            # Return result if at least one value was found
+            if result['gamemode'] or result['map']:
+                return result
+            else:
+                return None
+                
+        except Exception as e:
+            print(f"Error during OCR: {e}")
+            return None
+
+
+    """""""""""""""""""""""""""""
          APPLICATION LOGIC
     """""""""""""""""""""""""""""
 
@@ -158,26 +208,38 @@ class Sentinel:
             # Capture desired regions
             weapon_screenshot = self.capture_screenshot(ROIS['weapon'])
             legend_screenshot = self.capture_screenshot(ROIS['legend'])
+            gamemode_screenshot = self.capture_screenshot(ROIS['gamemode'])
 
             # Identify desired regions
             current_weapon = self.identify_weapon(weapon_screenshot)
             current_legend = self.identify_legend(legend_screenshot)
+            current_gamemode = self.identify_gamemode(gamemode_screenshot)
 
             # Display results
             print(f"Timestamp: {time.strftime('%H:%M:%S')}")
             print(f"Current Weapon: {current_weapon}")
             print(f"Current Legend: {current_legend}")
+            
+            # Display gamemode and map
+            if current_gamemode:
+                print(f"Current Gamemode: {current_gamemode.get('gamemode', 'Unknown gamemode')}")
+                print(f"Current Map: {current_gamemode.get('map', 'Unknown map')}")
+            else:
+                print("Current Gamemode: None detected")
+                print("Current Map: None detected")
+            
             print("-" * 40)
 
             # Debugging (MAY COMMENT OUT)
             #cv2.imshow("Weapon Screenshot", weapon_screenshot)
             #cv2.imshow("Legend Screenshot", legend_screenshot)
+            cv2.imshow("Gamemode Screenshot", gamemode_screenshot)
             
             # Terminate the loop if 'q' is pressed
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-            time.sleep(2)
+            time.sleep(2)   # Delay between screenshots
         
         cv2.destroyAllWindows()
         print("Sentinel stopped.")
