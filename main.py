@@ -11,10 +11,12 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 # Regions of interest for game elements
 ROIS = {
     'weapon': {'top': 1275, 'left': 2055, 'width': 245, 'height': 90},
+    'legend': {'top': 1275, 'left': 115, 'width': 115, 'height': 90},
 }
 
-# Screenshot folders
+# Screenshot template folders
 WEAPON_TEMPLATE_FOLDER = 'screenshots/weapon_templates'
+LEGEND_TEMPLATE_FOLDER = 'screenshots/legend_templates'
 
 class Sentinel:
     '''
@@ -23,9 +25,18 @@ class Sentinel:
     def __init__(self):
         self.sct = mss.mss()
         self.weapon_templates = self.load_weapon_templates()
+        self.legend_templates = self.load_legend_templates()
 
+
+    """""""""""""""""""""""""""""
+        WEAPON DETECTION LOGIC
+    """""""""""""""""""""""""""""
 
     def load_weapon_templates(self):
+        '''
+        Load weapon templates from the specified folder.
+        Returns a dictionary with weapon names as keys and their templates as values.
+        '''
         templates = {}
         if not os.path.exists(WEAPON_TEMPLATE_FOLDER):
             print(f"Warning: Template folder '{WEAPON_TEMPLATE_FOLDER}' does not exist.")
@@ -47,17 +58,6 @@ class Sentinel:
         return templates
     
 
-    def capture_screenshot(self, region):
-        '''
-        Capture a screenshot of the specified region.
-        Region should be a dictionary with keys: 'top', 'left', 'width', 'height'.
-        '''
-        screenshot = self.sct.grab(region)
-        img = np.array(screenshot)
-        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR) # Discards alpha channel for OpenCV
-        return img
-    
-
     def identify_weapon(self, screenshot):
         '''
         Identify the weapon in the screenshot using template matching.
@@ -73,13 +73,81 @@ class Sentinel:
         for weapon_name, template in self.weapon_templates.items():
             result = cv2.matchTemplate(gray_screenshot, template, cv2.TM_CCOEFF_NORMED) # Comparison that returns a 2D array of scores
             _, max_val, _, _ = cv2.minMaxLoc(result) # minMaxLoc returns (min_val, max_val, min_loc, max_loc), so we only care about max_val
+            #print(f"Weapon: {weapon_name}, Match Score: {max_val:.4f}")  # Debugging output
             if max_val > best_match['score']:
                 best_match['weapon'] = weapon_name
                 best_match['score'] = max_val
 
         return best_match['weapon'] if best_match['weapon'] else "Unknown weapon"
 
+
+    """""""""""""""""""""""""""""
+        LEGEND DETECTION LOGIC
+    """""""""""""""""""""""""""""
+
+    def load_legend_templates(self):
+        '''
+        Load legend templates from the specified folder.
+        Returns a dictionary with legend names as keys and their templates as values.
+        '''
+        templates = {}
+        if not os.path.exists(LEGEND_TEMPLATE_FOLDER):
+            print(f"Warning: Template folder '{LEGEND_TEMPLATE_FOLDER}' does not exist.")
+            return templates
+
+        # Load all legend templates
+        for filename in os.listdir(LEGEND_TEMPLATE_FOLDER):
+            if filename.endswith('.png'):
+                legend_name = os.path.splitext(filename)[0] # Remove file extension
+                template_path = os.path.join(LEGEND_TEMPLATE_FOLDER, filename)
+
+                template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+                if template is not None:
+                    templates[legend_name] = template
+                else:
+                    print(f"Warning: Could not load template '{template_path}'")
+
+        print(f"Loaded {len(templates)} legend templates.")
+        return templates
     
+
+    def identify_legend(self, screenshot):
+        '''
+        Identify the legend in the screenshot using template matching.
+        Returns the name of the legend if found, otherwise None.
+        '''
+        if not self.legend_templates:
+            print("No legend templates loaded.")
+            return None
+
+        gray_screenshot = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+        best_match = {'legend': None, 'score': 0.6} # Threshold for matching
+
+        for legend_name, template in self.legend_templates.items():
+            result = cv2.matchTemplate(gray_screenshot, template, cv2.TM_CCOEFF_NORMED) # Comparison that returns a 2D array of scores
+            _, max_val, _, _ = cv2.minMaxLoc(result) # minMaxLoc returns (min_val, max_val, min_loc, max_loc), so we only care about max_val
+            if max_val > best_match['score']:
+                best_match['legend'] = legend_name
+                best_match['score'] = max_val
+
+        return best_match['legend'] if best_match['legend'] else "Unknown legend"
+
+
+    """""""""""""""""""""""""""""
+         APPLICATION LOGIC
+    """""""""""""""""""""""""""""
+
+    def capture_screenshot(self, region):
+        '''
+        Capture a screenshot of the specified region.
+        Region should be a dictionary with keys: 'top', 'left', 'width', 'height'.
+        '''
+        screenshot = self.sct.grab(region)
+        img = np.array(screenshot)
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR) # Discards alpha channel for OpenCV
+        return img
+
+
     def run(self):
         '''
         Main loop to capture screenshots and identify weapons.
@@ -87,19 +155,23 @@ class Sentinel:
         print("Starting Sentinel... Press 'q' to quit.")
         print("-" * 40)
         while True:
-            # Capture the screenshot of the weapon region
+            # Capture desired regions
             weapon_screenshot = self.capture_screenshot(ROIS['weapon'])
+            legend_screenshot = self.capture_screenshot(ROIS['legend'])
 
-            # Identify the weapon in the screenshot
+            # Identify desired regions
             current_weapon = self.identify_weapon(weapon_screenshot)
+            current_legend = self.identify_legend(legend_screenshot)
 
             # Display results
             print(f"Timestamp: {time.strftime('%H:%M:%S')}")
             print(f"Current Weapon: {current_weapon}")
+            print(f"Current Legend: {current_legend}")
             print("-" * 40)
 
-            # Debugging
-            cv2.imshow("Weapon Screenshot", weapon_screenshot)
+            # Debugging (MAY COMMENT OUT)
+            #cv2.imshow("Weapon Screenshot", weapon_screenshot)
+            #cv2.imshow("Legend Screenshot", legend_screenshot)
             
             # Terminate the loop if 'q' is pressed
             if cv2.waitKey(1) & 0xFF == ord('q'):
